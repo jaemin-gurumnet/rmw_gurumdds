@@ -597,10 +597,11 @@ _take(
   info->queue_mutex.lock();
   auto msg = info->message_queue.front();
   info->message_queue.pop();
-  if (info->message_queue.empty()) {
+  bool is_empty = info->message_queue.empty();
+  info->queue_mutex.unlock();
+  if (is_empty) {
     dds_GuardCondition_set_trigger_value(info->queue_guard_condition, false);
   }
-  info->queue_mutex.unlock();
 
   bool ignore_sample = false;
 
@@ -753,13 +754,17 @@ rmw_take_sequence(
   *taken = 0;
   size_t attempt = 0;
 
-  info->queue_mutex.lock();
-  while (attempt < count && !info->message_queue.empty()) {
+  while (attempt < count) {
+    info->queue_mutex.lock();
+    if (info->message_queue.empty()) {
+      info->queue_mutex.unlock();
+      dds_GuardCondition_set_trigger_value(info->queue_guard_condition, false);
+      break;
+    }
     auto msg = info->message_queue.front();
     info->message_queue.pop();
-    if (info->message_queue.empty()) {
-      dds_GuardCondition_set_trigger_value(info->queue_guard_condition, false);
-    }
+    info->queue_mutex.unlock();
+
     bool ignore_sample = false;
     attempt++;
 
@@ -817,7 +822,6 @@ rmw_take_sequence(
       dds_free(msg.info);
     }
   }
-  info->queue_mutex.unlock();
 
   // =============================================================================================
 
@@ -857,10 +861,11 @@ _take_serialized(
   info->queue_mutex.lock();
   auto msg = info->message_queue.front();
   info->message_queue.pop();
-  if (info->message_queue.empty()) {
+  bool is_empty = info->message_queue.empty();
+  info->queue_mutex.unlock();
+  if (is_empty) {
     dds_GuardCondition_set_trigger_value(info->queue_guard_condition, false);
   }
-  info->queue_mutex.unlock();
 
   bool ignore_sample = false;
 
